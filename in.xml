@@ -42,6 +42,11 @@
   <paint alpha="0.4"/>
   <paint/>
 
+<!--
+  <set-source r="0.1" g="0.2" b="0.4" a="0.4"/>
+  <mask image="tex1" width="100" x="20"/>
+-->
+
   <sub transform="scale(0.5)">
     <path d="
       M 10,30

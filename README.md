@@ -16,7 +16,6 @@ TODO:
 * use root-level `<surface>` attributes as surface-factory parameters...
 
 Not yet implemented:
-* `<mask .../>` (similar to `<set-source .../>` ...)
 * push_group / pop_group -> `<group content="color">...</group>`
 * General patterns (gradients, mesh); pattern filter, extend, matrix
 * `<set ctm="1 0 0 1 2 3"/>` (or, possibly: `<set ctm="matrix(...)"/>`), "reset ctm"  

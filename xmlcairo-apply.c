@@ -531,13 +531,14 @@ err_parse:
 // }}}
 
 
-struct _set_source_attrs_t {
+struct _set_source_mask_attrs_t {
   xmlcairo_surface_t *surface;
   enum {
     SSTYPE_NONE = 0,
     SSTYPE_PATTERN = 0x01,
     SSTYPE_IMAGE = 0x02,
-    SSTYPE_RGB = 0x04
+    SSTYPE_RGB = 0x04,
+    SSTYPE_MASK_NORGB = 0x80
   } type;
   double r, g, b, a;
   cairo_pattern_t *pattern;
@@ -547,9 +548,10 @@ struct _set_source_attrs_t {
 };
 
 // @r @g @b [@a]  OR  @pattern  OR  @image [@x] [@y] [@width] [@height] [@gravity]
-static int set_source_attrs(const xmlChar *name, const xmlChar *value, void *user) // {{{
+static int set_source_mask_attrs(const xmlChar *name, const xmlChar *value, void *user) // {{{
 {
-  struct _set_source_attrs_t *attrs = (struct _set_source_attrs_t *)user;
+  struct _set_source_mask_attrs_t *attrs = (struct _set_source_mask_attrs_t *)user;
+  const int is_mask = !!(attrs->type & SSTYPE_MASK_NORGB);
 
 /*
   if (strEqual(name, "pattern")) {
@@ -576,7 +578,7 @@ static int set_source_attrs(const xmlChar *name, const xmlChar *value, void *use
     attrs->type |= SSTYPE_IMAGE;
     attrs->gravity = parse_gravity(value);
     if (attrs->gravity == (enum gravity_e)-1) {
-      WARN("could not parse <set-source %s=\"%s\">", name, value);
+      WARN("could not parse <%s %s=\"%s\">", (is_mask ? "mask" : "set-source"), name, value);
       return ATTR_PARSE;
     }
     return ATTR_SUCCESS;
@@ -598,27 +600,47 @@ static int set_source_attrs(const xmlChar *name, const xmlChar *value, void *use
     attrs->type |= SSTYPE_IMAGE;
     attrs->height = val;
 
-  } else if (strEqual(name, "r")) {
+  } else if (strEqual(name, "r") && !is_mask) {
     attrs->type |= SSTYPE_RGB;
     attrs->r = val;
-  } else if (strEqual(name, "g")) {
+  } else if (strEqual(name, "g") && !is_mask) {
     attrs->type |= SSTYPE_RGB;
     attrs->g = val;
-  } else if (strEqual(name, "b")) {
+  } else if (strEqual(name, "b") && !is_mask) {
     attrs->type |= SSTYPE_RGB;
     attrs->b = val;
-  } else if (strEqual(name, "a")) {
+  } else if (strEqual(name, "a") && !is_mask) {
     attrs->type |= SSTYPE_RGB;
     attrs->a = val;
+
   } else {
-    WARN("attribute <set-source %s=...> not known", name);
+    WARN("attribute <%s %s=...> not known", (is_mask ? "mask" : "set-source"), name);
     return ATTR_UNKNOWN;
   }
 
   if (ret == ATTR_PARSE) {
-    WARN("could not parse <set-source %s=\"%s\">", name, value);
+    WARN("could not parse <%s %s=\"%s\">", (is_mask ? "mask" : "set-source"), name, value);
   }
   return ret;
+}
+// }}}
+
+// must be cairo_pattern_destroy()ed
+static cairo_pattern_t *get_ssm_image_pattern(struct _set_source_mask_attrs_t *attrs) // {{{
+{
+  // assert(cairo_surface_get_type(attrs->image) == CAIRO_SURFACE_TYPE_IMAGE);
+  const int ow = cairo_image_surface_get_width(attrs->image),
+            oh = cairo_image_surface_get_height(attrs->image);
+  double sx, sy, dx, dy;
+  compute_fit(ow, oh, attrs->width, attrs->height, attrs->gravity, &sx, &sy, &dx, &dy);
+
+  cairo_pattern_t *pattern = cairo_pattern_create_for_surface(attrs->image);
+
+  cairo_matrix_t matrix;
+  cairo_matrix_init(&matrix, sx, 0.0, 0.0, sy, -sx * (dx + (!isnan(attrs->x) ? attrs->x : 0.0)), -sy * (dy + (!isnan(attrs->y) ? attrs->y : 0.0)));
+  cairo_pattern_set_matrix(pattern, &matrix);
+
+  return pattern; // pattern status can be non-success
 }
 // }}}
 
@@ -645,7 +667,7 @@ static int text_attrs(const xmlChar *name, const xmlChar *value, void *user) // 
 
   } else if (strEqual(name, "size")) {
     attrs->size = parse_double(value);
-    if (isnan(attrs->size)) { // size < 0.0 will just set a negative scale matrix ...
+    if (isnan(attrs->size)) { // size < 0.0 would just set a negative scale matrix ...
       goto err_parse;
     }
 
@@ -777,6 +799,46 @@ static int _xmlcairo_apply_one(xmlcairo_surface_t *surface, cairo_t *cr, xmlNode
     }
     break;
 
+  CASE('m', 'a'):
+    if (EQ("mask")) {
+      struct _set_source_mask_attrs_t attrs = {
+        .surface = surface,
+        .type = SSTYPE_MASK_NORGB,
+        .x = 0.0, .y = 0.0, .width = NAN, .height = NAN,
+        .gravity = GRAVITY_CENTER
+      };
+      const int res = for_each_attr(insn, set_source_mask_attrs, &attrs);
+      if (res) {
+        return ELEM_BADATTR;
+      }
+      attrs.type &= ~SSTYPE_MASK_NORGB;
+      if ((attrs.type & (attrs.type - 1)) != 0) {
+        WARN("only either <mask pattern=\"...\"/>, or <mask image=\"...\" [x=\"...\"] [y=\"...\"] [width=\"...\"] [height=\"...\"] [gravity=\"...\"]/> is allowed");
+        return ELEM_BADATTR;
+      }
+      switch (attrs.type) {
+/* FIXME
+      case SSTYPE_PATTERN:
+        cairo_set_source(cr, attrs.pattern);
+        break;
+*/
+      case SSTYPE_IMAGE:
+        if (!isnan(attrs.width) || !isnan(attrs.height)) {
+          cairo_pattern_t *pattern = get_ssm_image_pattern(&attrs);
+          cairo_mask(cr, pattern);
+          cairo_pattern_destroy(pattern);
+        } else {
+          cairo_mask_surface(cr, attrs.image, (!isnan(attrs.x) ? attrs.x : 0.0), (!isnan(attrs.y) ? attrs.y : 0.0));
+        }
+        break;
+
+      default: // no attribute -> silently ignore  [/ SSTYPE_RGB does not happen...]  // TODO?
+        break;
+      }
+      return ELEM_SUCCESS;
+    }
+    break;
+
   CASE('p', 'a'):
     if (EQ("paint")) {
       double alpha = NAN;
@@ -817,14 +879,14 @@ static int _xmlcairo_apply_one(xmlcairo_surface_t *surface, cairo_t *cr, xmlNode
       return ELEM_SUCCESS;
 
     } else if (EQ("set-source")) {
-      struct _set_source_attrs_t attrs = {
+      struct _set_source_mask_attrs_t attrs = {
         .surface = surface,
         .type = SSTYPE_NONE,
         .r = NAN, .g = NAN, .b = NAN, .a = 1.0,
         .x = 0.0, .y = 0.0, .width = NAN, .height = NAN,
         .gravity = GRAVITY_CENTER
       };
-      const int res = for_each_attr(insn, set_source_attrs, &attrs);
+      const int res = for_each_attr(insn, set_source_mask_attrs, &attrs);
       if (res) {
         return ELEM_BADATTR;
       }
@@ -840,21 +902,7 @@ static int _xmlcairo_apply_one(xmlcairo_surface_t *surface, cairo_t *cr, xmlNode
 */
       case SSTYPE_IMAGE:
         if (!isnan(attrs.width) || !isnan(attrs.height)) {
-          // assert(cairo_surface_get_type(attrs.image) == CAIRO_SURFACE_TYPE_IMAGE);
-          const int ow = cairo_image_surface_get_width(attrs.image),
-                    oh = cairo_image_surface_get_height(attrs.image);
-          double sx, sy, dx, dy;
-          compute_fit(ow, oh, attrs.width, attrs.height, attrs.gravity, &sx, &sy, &dx, &dy);
-
-          cairo_pattern_t *pattern = cairo_pattern_create_for_surface(attrs.image);
-          if (cairo_pattern_status(pattern) != CAIRO_STATUS_SUCCESS) {
-            return ELEM_CAIRO_ERROR; // TODO?! error, but not on surface itself...?
-          }
-
-          cairo_matrix_t matrix;
-          cairo_matrix_init(&matrix, sx, 0.0, 0.0, sy, -sx * (dx + (!isnan(attrs.x) ? attrs.x : 0.0)), -sy * (dy + (!isnan(attrs.y) ? attrs.y : 0.0)));
-          cairo_pattern_set_matrix(pattern, &matrix);
-
+          cairo_pattern_t *pattern = get_ssm_image_pattern(&attrs);
           cairo_set_source(cr, pattern);
           cairo_pattern_destroy(pattern);
         } else {
