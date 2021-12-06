@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<surface>
+<!--  <surface type="..." width="" height="" ???> ... </surface> -->
+  <sub>
+    <set/>
+  </sub>
+
+<!--
+  <group> ... </group>    -> to source ?
+  <group content="color|alpha|coloralpha"> ... </group>
+  <group pattern="patternname"> ... </group>   ? to-pattern ?
+  <group pattern="patternname" content="..."> ... </group> -->
+
+  <set antialias="best"/> <!-- default none gray fast good best -->
+  <set fill-rule="winding"/> <!-- winding/nonzero evenodd -->
+  <set line-cap="round"/>  <!-- butt round square -->
+  <set line-join="bevel"/>  <!-- miter round bevel -->
+  <set line-width="2.0"/>
+  <set miter-limit="3.0"/>
+  <set operator="over"/>  <!-- atop add clear color color-dodge color-burn darken difference dest dest-over dest-in dest-out dest-atop exclusion hard-light hsl-hue/hue hsl-saturation/saturation hsl-color/color hsl-luminosity/luminosity in lighten multiply over/default/normal out overlay source saturate screen soft-light xor -->
+  <set tolerance="0.25"/>
+
+  <copy-page/>
+  <show-page/>
+
+  <clip preserve="1"/>
+  <clip/>
+  <reset-clip/>
+
+  <fill preserve="1"/>
+  <fill/>
+  <stroke preserve="1"/>
+  <stroke/>
+
+  <set-source r="0.4" g="0.4" b="0.3"/>
+<!--
+  <set-source pattern="..."/>
+  <set-source image="tex0" width="50" height="75" gravity="stretch" x="25"/>
+-->
+  <set-source image="tex0" width="100"/>
+
+  <paint alpha="0.4"/>
+  <paint/>
+
+  <sub transform="scale(0.5)">
+    <path d="
+      M 10,30
+      A 20,20 0,0,1 50,30
+      A 20,20 0,0,1 90,30
+      Q 90,60 50,90
+      Q 10,60 10,30 z
+    "/>
+    <set-source r="1.0" g="1.0" b="0.3"/>
+    <stroke/>
+  </sub>
+
+  <set-source r="1.0" g="0.4" b="0.3"/>
+  <text font="font0" size="16" y="60" max-width="0">Blubb</text> <!-- NOTE: y is baseline -->
+
+</surface>
