@@ -437,7 +437,7 @@ static int apply_path_attrs(const xmlChar *name, const xmlChar *value, void *use
 }
 // }}}
 
-static int apply_transform_attrs(const xmlChar *name, const xmlChar *value, void *user)
+static int apply_transform_attrs(const xmlChar *name, const xmlChar *value, void *user) // {{{
 {
   cairo_t *cr = (cairo_t *)user;
 
@@ -456,6 +456,7 @@ static int apply_transform_attrs(const xmlChar *name, const xmlChar *value, void
   cairo_transform(cr, &mtx);
   return ATTR_SUCCESS;
 }
+// }}}
 
 static int apply_set_attrs(const xmlChar *name, const xmlChar *value, void *user) // {{{
 {
@@ -530,6 +531,56 @@ err_parse:
 }
 // }}}
 
+static int offset_attrs(const xmlChar *name, const xmlChar *value, void *user) // {{{
+{
+  if (!strEqual(name, "offset")) {
+    WARN("expected @offset, got @%s", name);
+    return ATTR_UNKNOWN;
+  }
+
+  double *offset = (double *)user;
+
+  const double ret = parse_double(value);
+  if (isnan(ret)) {
+    // WARN(...);   // TODO?!
+    return ATTR_PARSE;
+  }
+
+  *offset = ret;
+  return ATTR_SUCCESS;
+}
+// }}}
+
+static int dash_content(const xmlChar *value, void *user) // {{{
+{
+  if (!value) {
+    return ELEM_CAIRO_ERROR;  // TODO... malloc error ?
+  }
+
+  struct cairo_svg_dasharray_s *da = (struct cairo_svg_dasharray_s *)user;
+
+  const int res = parse_svg_cairo_dasharray(da, (const char *)value);
+  if (res >= 0) {
+    WARN("could not parse ...%s</dash>", value + res);
+    return ELEM_CAIRO_ERROR;
+  }
+
+  // assert(!da->num_dashes || da->dashes);
+  for (int i = 0; i < da->num_dashes; i++) {
+    if (da->dashes[i] > 0.0) {
+      // NOTE: < 0.0 already checked by parse_svg_cairo_dasharray()
+      // NOTE: cairo does repeat odd num_dashes just like svg
+      return ELEM_SUCCESS;
+    }
+  }
+
+  // -> all elements are zero  -> disable dashing (-> solid line)
+  free_dasharray(da);
+  da->num_dashes = 0;
+
+  return ELEM_SUCCESS;
+}
+// }}}
 
 struct _set_source_mask_attrs_t {
   xmlcairo_surface_t *surface;
@@ -781,6 +832,22 @@ static int _xmlcairo_apply_one(xmlcairo_surface_t *surface, cairo_t *cr, xmlNode
       }
       cairo_copy_page(cr);
       return ELEM_SUCCESS;
+    }
+    break;
+
+  CASE('d', 'a'):
+    if (EQ("dash")) {
+      double offset = 0.0;
+      if (for_each_attr(insn, offset_attrs, &offset)) {
+        return ELEM_BADATTR;
+      }
+      struct cairo_svg_dasharray_s da = {};
+      const int res = for_content(insn, dash_content, &da);
+      if (res == ELEM_SUCCESS) {
+        cairo_set_dash(cr, da.dashes, da.num_dashes, offset);
+        free_dasharray(&da);
+      }
+      return res;
     }
     break;
 

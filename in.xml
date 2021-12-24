@@ -48,6 +48,7 @@
 -->
 
   <sub transform="scale(0.5)">
+    <dash offset="4">8</dash>
     <path d="
       M 10,30
       A 20,20 0,0,1 50,30

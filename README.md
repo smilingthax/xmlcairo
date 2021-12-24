@@ -20,7 +20,6 @@ Not yet implemented:
 * General patterns (gradients, mesh); pattern filter, extend, matrix
 * `<set ctm="1 0 0 1 2 3"/>` (or, possibly: `<set ctm="matrix(...)"/>`), "reset ctm"  
   (but there is `<sub transform="matrix(1 0 0 1 2 3)">...</sub>`)
-* Dash pattern / offset(phase)
 * cairo_tag_begin ... ?
 
 Ideas:

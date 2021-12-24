@@ -837,7 +837,7 @@ static void _tbcairo_scale(void *user, float x, float y)
 
 static void _tbcairo_rotate(void *user, float a, float x, float y)
 {
-  if (x == 0.0 && y == 0.0) {
+  if (x == 0.0f && y == 0.0f) {
     cairo_matrix_rotate((cairo_matrix_t *)user, a);
   } else {
     cairo_matrix_translate((cairo_matrix_t *)user, x, y);
@@ -872,5 +872,67 @@ static const struct _transform_builder_t tbcairo = {
 int parse_svg_cairo_transform(cairo_matrix_t *matrix, const char *str)
 {
   return parse_svg_transform(str, &tbcairo, matrix);
+}
+
+
+// NOTE: both FF and Chrome allow leading WSP (but not COMMA)
+// NOTE: does not support length units or percentages
+int parse_svg_cairo_dasharray(struct cairo_svg_dasharray_s *ret, const char *str)
+{
+  if (!ret) {
+    return 0; // TODO?
+  } else if (!str) {
+    return 0; // todo?
+  }
+
+  if (ret->dashes) {
+    free_dasharray(ret); // TODO?
+  }
+
+  const char *cur = str, *tmp;
+
+  // estimate number of elements for malloc
+  ret->num_dashes = 0;
+  cur = skipWS(cur);
+  while (*cur) {
+    tmp = cur + strspn(cur, "0123456789+-.eE");
+    if (cur == tmp) {
+      return cur - str;
+    }
+    cur = consumeCommaWS(tmp, false);
+    ret->num_dashes++;
+  }
+
+  if (!ret->num_dashes) {
+    return -1;
+  }
+
+  ret->dashes = malloc(ret->num_dashes * sizeof(*ret->dashes));
+  if (!ret->dashes) {
+    return 0; // TODO?!
+  }
+
+  double *dash = ret->dashes;
+  cur = skipWS(str);
+  while (*cur) {
+    float val;
+    tmp = parseCoordinate(cur, &val);
+    if (!tmp || val < 0.0f) {
+      free_dasharray(ret);
+      return cur - str;
+    }
+    cur = consumeCommaWS(tmp, false);
+    *dash++ = val;
+  }
+
+  return -1;
+}
+
+void free_dasharray(struct cairo_svg_dasharray_s *da)
+{
+  if (da) {
+    free(da->dashes); // (accepts NULL)
+    da->dashes = NULL;
+  }
 }
 
